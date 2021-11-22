@@ -1,0 +1,122 @@
+name: build-nightly
+on: [push]
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull Docker image
+        run: docker pull bendk/application-services-builder
+      - name: Checkout application-services
+        run: docker run --rm -v $(pwd)/build:/build:z --ulimit nofile=5000:5000 -- bendk/application-services-builder checkout https://github.com/mozilla/application-services.git v86.2.1
+      - name: Checkout android-components
+        run: docker run --rm -v $(pwd)/build:/build:z --ulimit nofile=5000:5000 -- bendk/application-services-builder checkout https://github.com/mozilla-mobile/android-components.git v96.0.4
+      - name: Checkout fenix
+        run: docker run --rm -v $(pwd)/build:/build:z --ulimit nofile=5000:5000 -- bendk/application-services-builder checkout https://github.com/mozilla-mobile/fenix.git v96.0.0-beta.2
+      - name: Setup workspaces
+        run: docker run --rm -v $(pwd)/build:/build:z --ulimit nofile=5000:5000 -- bendk/application-services-builder setup
+      - name: Archive Build dir
+        run: sudo tar zcf build-dir-setup.tar.gz build/
+      - name: Upload build dir
+        uses: actions/upload-artifact@v2
+        with:
+          name: build-dir-setup
+          path: build-dir-setup.tar.gz
+
+  build-application-services:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull Docker image
+        run: docker pull bendk/application-services-builder
+      - name: Download build dir
+        uses: actions/download-artifact@v2
+        with:
+          name: build-dir-setup
+          path: .
+      - name: Extract build dir
+        run: sudo tar zxf build-dir-setup.tar.gz
+      - name: Build application-services
+        run: docker run --rm -v $(pwd)/build:/build:z --ulimit nofile=5000:5000 -- bendk/application-services-builder build-application-services
+      - name: Archive Build dir
+        run: sudo tar zcf build-dir-application-services.tar.gz build/
+      - name: Upload build dir
+        uses: actions/upload-artifact@v2
+        with:
+          name: build-dir-application-services
+          path: build-dir-application-services.tar.gz
+
+  test-android-components:
+    needs: build-application-services
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull Docker image
+        run: docker pull bendk/application-services-builder
+      - name: Download build dir
+        uses: actions/download-artifact@v2
+        with:
+          name: build-dir-application-services
+          path: .
+      - name: Extract build dir
+        run: sudo tar zxf build-dir-application-services.tar.gz
+      - name: Test android-components
+        run: docker run --rm -v $(pwd)/build:/build:z --ulimit nofile=5000:5000 -- bendk/application-services-builder test-android-components
+
+  build-android-components:
+    needs: build-application-services
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull Docker image
+        run: docker pull bendk/application-services-builder
+      - name: Download build dir
+        uses: actions/download-artifact@v2
+        with:
+          name: build-dir-application-services
+          path: .
+      - name: Extract build dir
+        run: sudo tar zxf build-dir-application-services.tar.gz
+      - name: Build android-components
+        run: docker run --rm -v $(pwd)/build:/build:z --ulimit nofile=5000:5000 -- bendk/application-services-builder build-android-components
+      - name: Archive Build dir
+        run: sudo tar zcf build-dir-android-components.tar.gz build/
+      - name: Upload build dir
+        uses: actions/upload-artifact@v2
+        with:
+          name: build-dir-android-components
+          path: build-dir-android-components.tar.gz
+
+  test-fenix:
+    needs: build-android-components
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull Docker image
+        run: docker pull bendk/application-services-builder
+      - name: Download build dir
+        uses: actions/download-artifact@v2
+        with:
+          name: build-dir-android-components
+          path: .
+      - name: Extract build dir
+        run: sudo tar zxf build-dir-android-components.tar.gz
+      - name: Test Fenix
+        run: docker run --rm -v $(pwd)/build:/build:z --ulimit nofile=5000:5000 -- bendk/application-services-builder test-fenix
+
+  build-fenix:
+    needs: build-android-components
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull Docker image
+        run: docker pull bendk/application-services-builder
+      - name: Download build dir
+        uses: actions/download-artifact@v2
+        with:
+          name: build-dir-android-components
+          path: .
+      - name: Extract build dir
+        run: sudo tar zxf build-dir-android-components.tar.gz
+      - name: Build Fenix
+        run: docker run --rm -v $(pwd)/build:/build:z --ulimit nofile=5000:5000 -- bendk/application-services-builder build-fenix
+      - name: Publish APKs
+        uses: actions/upload-artifact@v2
+        with:
+          name: Fenix APKs
+          path: build/fenix/app/build/outputs/apk/debug/*.apk
